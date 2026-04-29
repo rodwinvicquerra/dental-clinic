@@ -103,16 +103,68 @@ export async function requireAdmin(): Promise<User> {
   return user
 }
 
+const MAX_LOGIN_ATTEMPTS = 5
+const LOCKOUT_MINUTES = 15
+
+async function ensureLoginAttemptsTable() {
+  await sql`
+    CREATE TABLE IF NOT EXISTS login_attempts (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) NOT NULL,
+      attempted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      success BOOLEAN DEFAULT false
+    )
+  `
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_login_attempts_email_time
+    ON login_attempts (email, attempted_at)
+  `
+}
+
+async function checkRateLimit(email: string): Promise<boolean> {
+  await ensureLoginAttemptsTable()
+  const since = new Date(Date.now() - LOCKOUT_MINUTES * 60 * 1000).toISOString()
+  const result = await sql`
+    SELECT COUNT(*) as count FROM login_attempts
+    WHERE email = ${email.toLowerCase()}
+      AND attempted_at > ${since}
+      AND success = false
+  `
+  return Number(result[0].count) >= MAX_LOGIN_ATTEMPTS
+}
+
+async function recordLoginAttempt(email: string, success: boolean) {
+  await ensureLoginAttemptsTable()
+  await sql`
+    INSERT INTO login_attempts (email, success) VALUES (${email.toLowerCase()}, ${success})
+  `
+  // Clean up old attempts older than 24 hours
+  await sql`
+    DELETE FROM login_attempts WHERE attempted_at < NOW() - INTERVAL '24 hours'
+  `
+}
+
 export async function login(
   email: string,
   password: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const normalizedEmail = email.toLowerCase().trim()
+
+    const locked = await checkRateLimit(normalizedEmail)
+    if (locked) {
+      return {
+        success: false,
+        error: `Too many failed attempts. Try again after ${LOCKOUT_MINUTES} minutes.`,
+      }
+    }
+
     const users = await sql`
-      SELECT * FROM users WHERE email = ${email.toLowerCase()}
+      SELECT * FROM users WHERE email = ${normalizedEmail}
     `
 
     if (users.length === 0) {
+      await recordLoginAttempt(normalizedEmail, false)
       return { success: false, error: "Invalid email or password" }
     }
 
@@ -120,9 +172,11 @@ export async function login(
     const isValid = await verifyPassword(password, user.password_hash)
 
     if (!isValid) {
+      await recordLoginAttempt(normalizedEmail, false)
       return { success: false, error: "Invalid email or password" }
     }
 
+    await recordLoginAttempt(normalizedEmail, true)
     await createSession(user.id)
     return { success: true }
   } catch (error) {

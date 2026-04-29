@@ -73,7 +73,7 @@ export default function LoginPage() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="admin@dentalclinic.com"
+                    placeholder="Enter your email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-10 h-11 bg-background"
@@ -116,19 +116,7 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            <div className="mt-6 pt-6 border-t border-border">
-              <p className="text-xs text-center text-muted-foreground">
-                Demo accounts:
-              </p>
-              <div className="mt-2 space-y-1 text-xs text-center text-muted-foreground">
-                <p>
-                  <span className="font-medium">Admin:</span> admin@dentalclinic.com / admin123
-                </p>
-                <p>
-                  <span className="font-medium">Staff:</span> staff@dentalclinic.com / staff123
-                </p>
-              </div>
-            </div>
+
           </CardContent>
         </Card>
       </div>
